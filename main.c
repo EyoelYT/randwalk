@@ -1,13 +1,17 @@
+#include <SDL.h>
+#include <SDL_rect.h>
+#include <SDL_render.h>
+#include <SDL_video.h>
+#include <math.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <stdbool.h>
-#include <math.h>
-#include <SDL.h>
-#include <SDL_video.h>
-#include <SDL_render.h>
-#include <SDL_rect.h>
 #include <time.h>
+#include <unistd.h>
+
+const int width = 800;
+const int height = 600;
+const double PI = 3.14159265358979323846;
 
 typedef struct {
     int r;
@@ -16,140 +20,135 @@ typedef struct {
     int a;
 } RGB;
 
-// RGB hslToRgb(float h, float s, float l) {
-//     float r, g, b;
-//     if (s == 0.0) {
-//         r = g = b = l; // achromatic
-//     } else {
-//         float q = (l < 0.5) ? (l * (1 + s)) : (l + s - l * s);
-//         float p = 2 * l - q;
-//         #define HUE_TO_RGB(v) \
-//             (v < 0.0 ? v + 1.0 : (v > 1.0 ? v - 1.0 : v)); \
-//             if (v < 1.0/6.0) r = p + (q - p) * 6 * v; \
-//             else if (v < 1.0/2.0) r = q; \
-//             else if (v < 2.0/3.0) r = p + (q - p) * (2.0/3.0 - v) * 6; \
-//             else r = p;
+typedef struct {
+    int x;
+    int y;
+} Vec2;
 
-//         float h_norm = h / 360.0; // Normalize hue to 0-1 range
-//         float v_r = h_norm + 1.0/3.0;
-//         float v_g = h_norm;
-//         float v_b = h_norm - 1.0/3.0;
+typedef struct {
+    SDL_Rect rect;
+    Vec2 velocity;
+    RGB rgb;
+    double degree;
+    double degree_direction;
+} BouncingRect;
 
-//         // Manually implement HUE_TO_RGB for all channels to avoid macro issues
-//         // Red
-//         if (v_r < 0.0) v_r += 1.0;
-//         if (v_r > 1.0) v_r -= 1.0;
-//         if (v_r < 1.0/6.0) r = p + (q - p) * 6 * v_r;
-//         else if (v_r < 1.0/2.0) r = q;
-//         else if (v_r < 2.0/3.0) r = p + (q - p)* (2.0/3.0 - v_r) * 6;
-//         else r = p;
-        
-//         // Green
-//         if (v_g < 0.0) v_g += 1.0;
-//         if (v_g > 1.0) v_g -= 1.0;
-//         if (v_g < 1.0/6.0) g = p + (q - p) * 6 * v_g;
-//         else if (v_g < 1.0/2.0) g = q;
-//         else if (v_g < 2.0/3.0) g = p + (q - p) * (2.0/3.0 - v_g) * 6;
-//         else g = p;
-
-//         // Blue
-//         if (v_b < 0.0) v_b += 1.0;
-//         if (v_b > 1.0) v_b -= 1.0;
-//         if (v_b < 1.0/6.0) b = p + (q - p) * 6 * v_b;
-//         else if (v_b < 1.0/2.0) b = q;
-//         else if (v_b < 2.0/3.0) b = p + (q - p) * (2.0/3.0 - v_b) * 6;
-//         else b = p;
-//         #undef HUE_TO_RGB
-//     }
-
-//     RGB color;
-//     color.r = (unsigned char)(r * 255.0);
-//     color.g = (unsigned char)(g * 255.0);
-//     color.b = (unsigned char)(b * 255.0);
-//     color.a = 0;
-//     return color;
-// }
+typedef struct {
+    int window_right_bound;
+    int window_bottom_bound;
+    int window_left_bound;
+    int window_top_bound;
+} WindowBounds;
 
 RGB rand_rgb() {
-    // // Generate a random hue (0 to 360 degrees)
-    // float hue = (float)(rand() % 360);
-
-    // // Set saturation and lightness to high values for brightness
-    // float saturation = 0.5 + (float)(rand() % 10) / 100.0; // 0.9 to 1.0
-    // float lightness = 0.5 + (float)(rand() % 50) / 100.0; // 0.5 to 1.0
-
-    // // Convert HSL to RGB
-    // return hslToRgb(hue, saturation, lightness);
-
     RGB color;
     color.r = rand() % 256;
     color.g = rand() % 256;
     color.b = rand() % 256;
-    color.a = 0;
+    color.a = rand() % 256;
     return color;
+}
+
+Vec2 get_spiral_point(double degree) {
+    double theta_radian = degree * (PI / 180.0);
+    double k = 1.5;
+    double radius = k * theta_radian;
+
+    double x = radius * cos(theta_radian);
+    double y = radius * sin(theta_radian);
+    Vec2 point = { x, y };
+    return point;
+}
+
+void update_bouncing_rect(BouncingRect *bouncing_rect, const WindowBounds window_bounds) {
+    if (bouncing_rect->rect.x + bouncing_rect->rect.w >=
+        window_bounds.window_right_bound) {
+        bouncing_rect->velocity.x = -bouncing_rect->velocity.x;
+        bouncing_rect->rgb = rand_rgb();
+    } else if (bouncing_rect->rect.x <= 0) {
+        bouncing_rect->velocity.x = abs(bouncing_rect->velocity.x);
+        bouncing_rect->rgb = rand_rgb();
+    }
+    if (bouncing_rect->rect.y + bouncing_rect->rect.h >=
+        window_bounds.window_bottom_bound) {
+        bouncing_rect->velocity.y = -bouncing_rect->velocity.y;
+        bouncing_rect->rgb = rand_rgb();
+    } else if (bouncing_rect->rect.y <= 0) {
+        bouncing_rect->velocity.y = abs(bouncing_rect->velocity.y);
+        bouncing_rect->rgb = rand_rgb();
+  }
+    bouncing_rect->rect.x += bouncing_rect->velocity.x;
+    bouncing_rect->rect.y += bouncing_rect->velocity.y;
+}
+
+void render_bouncing_rect(SDL_Renderer *prenderer, BouncingRect bouncing_rect) {
+    SDL_SetRenderDrawColor(prenderer, bouncing_rect.rgb.r, bouncing_rect.rgb.g, bouncing_rect.rgb.g, bouncing_rect.rgb.a);
+    SDL_RenderFillRect(prenderer, &bouncing_rect.rect);
+    SDL_RenderPresent(prenderer);
+}
+
+void update_spiral_rect(BouncingRect *spiral_rect, WindowBounds window_bounds) {
+    Vec2 spiral_point = get_spiral_point(spiral_rect->degree);
+    spiral_rect->rect.x = spiral_point.x + (window_bounds.window_right_bound / 2);
+    spiral_rect->rect.y = spiral_point.y + (window_bounds.window_bottom_bound / 2);
+
+    if (spiral_rect->rect.x <= 0 || spiral_rect->rect.y <= 0 || spiral_rect->rect.x >= window_bounds.window_right_bound || spiral_rect->rect.y >= window_bounds.window_bottom_bound) {
+        spiral_rect->degree_direction = -spiral_rect->degree_direction;
+        spiral_rect->rgb = rand_rgb();
+    } else if (spiral_rect->degree <= 0) {
+        spiral_rect->degree_direction = fabs(spiral_rect->degree_direction);
+        spiral_rect->rgb = rand_rgb();
+    }
+    spiral_rect->degree += spiral_rect->degree_direction;
+
+}
+void render_spiral_rect(SDL_Renderer *prenderer, BouncingRect spiral_rect) {
+    SDL_SetRenderDrawColor(prenderer, spiral_rect.rgb.r, spiral_rect.rgb.g, spiral_rect.rgb.g, spiral_rect.rgb.a);
+    SDL_RenderFillRect(prenderer, &spiral_rect.rect);
+    SDL_RenderPresent(prenderer);
 }
 
 int main(int argc, char *argv[]) {
     srand(time(NULL));
     SDL_Init(SDL_INIT_VIDEO);
-    SDL_Window *pwindow = SDL_CreateWindow(
-        "RandWalk",           // Window title
-        SDL_WINDOWPOS_CENTERED,   // Initial x position (centered)
-        SDL_WINDOWPOS_CENTERED,   // Initial y position (centered)
-        800,                      // Width in pixels
-        600,                      // Height in pixels
-        SDL_WINDOW_SHOWN      // Flags (make it visible)
-    );
-
-    SDL_Renderer* prenderer = SDL_CreateRenderer(pwindow, -1, SDL_RENDERER_SOFTWARE);
-
     bool quit = false;
     SDL_Event event;
-    SDL_Rect rect = {.x = 2, .y = 2, .w = 2, .h = 2};
+    SDL_Window *pwindow = SDL_CreateWindow("RandWalk", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, SDL_WINDOW_SHOWN | SDL_WINDOW_FULLSCREEN);
+    SDL_Renderer *prenderer = SDL_CreateRenderer(pwindow, -1, SDL_RENDERER_SOFTWARE);
 
-    RGB rgb_box = rand_rgb();
-    SDL_SetRenderDrawColor(prenderer, rgb_box.r, rgb_box.g, rgb_box.b, rgb_box.a);
-    SDL_RenderFillRect(prenderer, &rect);
-    SDL_RenderPresent(prenderer);
+    WindowBounds window_bounds = { .window_left_bound = 0, .window_top_bound = 0};
+    SDL_GetWindowSize(pwindow, &window_bounds.window_right_bound, &window_bounds.window_bottom_bound);
+
+    BouncingRect bouncing_rect = {
+        .rect = {.x = 0, .y = 0, .w = 5, .h = 5},
+        .velocity = { .x = 10, .y = 10 },
+        .rgb = rand_rgb(),
+    };
     
-    int x_direction = 5;
-    int y_direction = 5;
+    BouncingRect spiral_rect = {
+        .rect = { .x = window_bounds.window_right_bound/2, .y = window_bounds.window_bottom_bound/2, .w = 5, .h = 5 },
+        .velocity = { .x = 10, .y = 10 },
+        .rgb = rand_rgb(),
+        .degree = 0,
+        .degree_direction = 10
+    };
 
     while (!quit) {
-        // Poll for events
+
         while (SDL_PollEvent(&event) != 0) {
-            // User requests quit
             if (event.type == SDL_QUIT) {
                 quit = true;
             }
         }
-        int window_width;
-        int window_height;
-        SDL_GetWindowSize(pwindow, &window_width, &window_height);
-        if (rect.x + rect.w >= window_width) {
-            x_direction = -x_direction;
-            rgb_box = rand_rgb();
-        } else if (rect.x <= 0) {
-            x_direction = abs(x_direction);
-            rgb_box = rand_rgb();
-        }
-        if (rect.y + rect.h >= window_height) {
-            y_direction = -y_direction;
-            rgb_box = rand_rgb();
-        } else if (rect.y <= 0) {
-            y_direction = abs(y_direction);
-            rgb_box = rand_rgb();
-        }
-        // printf("x = %d\n", rect.x);
-        // printf("y = %d\n", rect.y);
-        // printf("\n");
-        rect.x += x_direction;
-        rect.y += y_direction;
 
-        SDL_SetRenderDrawColor(prenderer, rgb_box.r, rgb_box.g, rgb_box.g, rgb_box.a );
-        SDL_RenderFillRect(prenderer, &rect);
-        SDL_RenderPresent(prenderer);
+        SDL_GetWindowSize(pwindow, &window_bounds.window_right_bound, &window_bounds.window_bottom_bound);
 
-        // SDL_Delay(10);
+        // update and render bouncer rect
+        update_bouncing_rect(&bouncing_rect, window_bounds);
+        render_bouncing_rect(prenderer, bouncing_rect);
+
+        // render then update spiral rect
+        render_spiral_rect(prenderer, spiral_rect);
+        update_spiral_rect(&spiral_rect,window_bounds);
     }
 }
