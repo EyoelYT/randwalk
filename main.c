@@ -9,9 +9,7 @@
 #include <time.h>
 #include <unistd.h>
 
-const int width = 800;
-const int height = 600;
-const double PI = 3.14159265358979323846;
+#define PI 3.14159265358979323846
 
 typedef struct {
     int r;
@@ -46,7 +44,7 @@ RGB rand_rgb() {
     color.r = rand() % 256;
     color.g = rand() % 256;
     color.b = rand() % 256;
-    color.a = 0;
+    color.a = 255;
     return color;
 }
 
@@ -81,9 +79,8 @@ void update_bouncing_rect(BouncingRect *bouncing_rect, const WindowBounds window
 }
 
 void render_bouncing_rect(SDL_Renderer *prenderer, BouncingRect bouncing_rect) {
-    SDL_SetRenderDrawColor(prenderer, bouncing_rect.rgb.r, bouncing_rect.rgb.g, bouncing_rect.rgb.g, bouncing_rect.rgb.a);
+    SDL_SetRenderDrawColor(prenderer, bouncing_rect.rgb.r, bouncing_rect.rgb.g, bouncing_rect.rgb.b, bouncing_rect.rgb.a);
     SDL_RenderFillRect(prenderer, &bouncing_rect.rect);
-    SDL_RenderPresent(prenderer);
 }
 
 void update_spiral_rect(BouncingRect *spiral_rect, WindowBounds window_bounds) {
@@ -134,11 +131,13 @@ void update_rand_walk_rect(BouncingRect *rand_walk_rect, WindowBounds window_bou
         rand_walk_rect->rect.x + rand_walk_rect->rect.w >= window_bounds.window_right_bound) {
         rand_walk_rect->velocity.x = -rand_walk_rect->velocity.x;
         rand_walk_rect->rgb = rand_rgb();
+        rand_walk_rect->step_tracker = 0;
     }
     if (rand_walk_rect->rect.y < window_bounds.window_top_bound ||
         rand_walk_rect->rect.y + rand_walk_rect->rect.h >= window_bounds.window_bottom_bound) {
         rand_walk_rect->velocity.y = -rand_walk_rect->velocity.y;
         rand_walk_rect->rgb = rand_rgb();
+        rand_walk_rect->step_tracker = 0;
     }
     // update step tracker
     if (rand_walk_rect->step_tracker >= num_steps) {
@@ -154,42 +153,54 @@ void update_rand_walk_rect(BouncingRect *rand_walk_rect, WindowBounds window_bou
 
 int main(int argc, char *argv[]) {
 
+    int width = 800;
+    int height = 600;
+
+    SDL_DisplayMode dm;
+    if (SDL_GetCurrentDisplayMode(0, &dm) == 0) {
+        int screen_width = dm.w;
+        int screen_height = dm.h;
+    }
+
     srand(time(NULL));
     SDL_Init(SDL_INIT_VIDEO);
     bool quit = false;
     SDL_Event event;
-    SDL_Window *pwindow = SDL_CreateWindow("RandWalk", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, SDL_WINDOW_SHOWN | SDL_WINDOW_FULLSCREEN);
+    SDL_Window *pwindow = SDL_CreateWindow("RandWalk", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, SDL_WINDOW_SHOWN | SDL_WINDOW_FULLSCREEN_DESKTOP);
     SDL_Renderer *prenderer = SDL_CreateRenderer(pwindow, -1, SDL_RENDERER_SOFTWARE);
 
-    const int rand_walk_rect_count = 5;
+    const int rand_walk_rect_count = 50;
+    const int pixel_size = 1;
+    const int rect_velocity = 1;
 
     WindowBounds window_bounds = { .window_left_bound = 0, .window_top_bound = 0};
     SDL_GetWindowSize(pwindow, &window_bounds.window_right_bound, &window_bounds.window_bottom_bound);
 
     BouncingRect bouncing_rect = {
-        .rect = {.x = 0, .y = 0, .w = 5, .h = 5},
-        .velocity = { .x = 5, .y = 5 },
+        .rect = {.x = 0, .y = 0, .w = pixel_size, .h = pixel_size},
+        .velocity = { .x = rect_velocity, .y = rect_velocity },
         .rgb = rand_rgb(),
     };
-    
+
     BouncingRect spiral_rect = {
-        .rect = { .x = window_bounds.window_right_bound/2, .y = window_bounds.window_bottom_bound/2, .w = 5, .h = 5 },
-        .velocity = { .x = 10, .y = 10 },
+        .rect = { .x = window_bounds.window_right_bound/2, .y = window_bounds.window_bottom_bound/2, .w = pixel_size, .h = pixel_size },
+        .velocity = { .x = rect_velocity, .y = rect_velocity },
         .rgb = rand_rgb(),
         .degree = 0,
-        .degree_direction = 10
+        .degree_direction = 5
     };
 
     BouncingRect rand_walk_rect = {
-        .rect = { .x = window_bounds.window_right_bound/2, .y = window_bounds.window_bottom_bound/2, .w = 5, .h = 5 },
-        .velocity = { .x = 0, .y = 5 },
+        .rect = { .x = window_bounds.window_right_bound/2, .y = window_bounds.window_bottom_bound/2, .w = pixel_size, .h = pixel_size },
+        .velocity = { .x = 0, .y = rect_velocity },
         .rgb = rand_rgb(),
     };
+
     BouncingRect rand_walk_rects[rand_walk_rect_count];
     for (int i = 0; i < rand_walk_rect_count; i++) {
         rand_walk_rects[i] = (BouncingRect) {
-            .rect = { .x = window_bounds.window_right_bound/2, .y = window_bounds.window_bottom_bound/2, .w = 5, .h = 5 },
-            .velocity = { .x = 5, .y = 0 },
+            .rect = { .x = window_bounds.window_right_bound/2, .y = window_bounds.window_bottom_bound/2, .w = pixel_size, .h = pixel_size },
+            .velocity = { .x = rect_velocity, .y = 0 },
             .rgb = rand_rgb(),
         };
     }
@@ -200,6 +211,15 @@ int main(int argc, char *argv[]) {
             if (event.type == SDL_QUIT) {
                 quit = true;
             }
+            if (event.type == SDL_KEYDOWN) {
+                switch (event.key.keysym.sym) {
+                    case SDLK_0: {
+                        SDL_SetRenderDrawColor(prenderer, 0, 0, 0, 255);
+                        SDL_RenderClear(prenderer);
+                        break;
+                    }
+                }
+            }
         }
 
         SDL_GetWindowSize(pwindow, &window_bounds.window_right_bound, &window_bounds.window_bottom_bound);
@@ -208,13 +228,15 @@ int main(int argc, char *argv[]) {
         update_spiral_rect(&spiral_rect, window_bounds);
         update_rand_walk_rect(&rand_walk_rect, window_bounds, rand_num(50, 100, 50));
 
-        render_bouncing_rect(prenderer, spiral_rect);
         render_bouncing_rect(prenderer, bouncing_rect);
+        render_bouncing_rect(prenderer, spiral_rect);
         render_bouncing_rect(prenderer, rand_walk_rect);
+
         for (int i = 0; i < rand_walk_rect_count; i++) {
-            update_rand_walk_rect(&rand_walk_rects[i], window_bounds, rand_num(50, 100, 50));
+            update_rand_walk_rect(&rand_walk_rects[i], window_bounds, rand_num(5, 100, 0));
             render_bouncing_rect(prenderer, rand_walk_rects[i]);
         }
 
+        SDL_RenderPresent(prenderer);
     }
 }
