@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include <SDL_keycode.h>
 #include <SDL_rect.h>
 #include <SDL_render.h>
 #include <SDL_video.h>
@@ -106,11 +107,11 @@ Vec2 rand_direction_two_choices(Vec2 curr) {
     int s = curr.x != 0 ? curr.x : curr.y;
 
     if (curr.x != 0) {
-        /* curr is (s,0) or (-s,0) -> choose among (0, s), (0,−s) */
+        // curr is (s,0) or (-s,0) -> choose among (0, s), (0,−s)
         choices[0] = (Vec2){ 0, s };
         choices[1] = (Vec2){ 0, -s };
     } else {
-        /* curr is (0,s) or (0,−s) -> choose among ( s,0), (−s,0) */
+        // curr is (0,s) or (0,−s) -> choose among ( s,0), (−s,0)
         choices[0] = (Vec2){ s, 0 };
         choices[1] = (Vec2){ -s, 0 };
     }
@@ -127,14 +128,26 @@ int rand_num(int min, int max, int constant) {
 
 void update_rand_walk_rect(BouncingRect *rand_walk_rect, WindowBounds window_bounds, int num_steps) {
     // update direction when collision
-    if (rand_walk_rect->rect.x < window_bounds.window_left_bound ||
-        rand_walk_rect->rect.x + rand_walk_rect->rect.w >= window_bounds.window_right_bound) {
+    if (rand_walk_rect->rect.x <= window_bounds.window_left_bound) {
+        rand_walk_rect->rect.x = window_bounds.window_left_bound + 1;
         rand_walk_rect->velocity.x = -rand_walk_rect->velocity.x;
         rand_walk_rect->rgb = rand_rgb();
         rand_walk_rect->step_tracker = 0;
     }
-    if (rand_walk_rect->rect.y < window_bounds.window_top_bound ||
-        rand_walk_rect->rect.y + rand_walk_rect->rect.h >= window_bounds.window_bottom_bound) {
+    if (rand_walk_rect->rect.x + rand_walk_rect->rect.w >= window_bounds.window_right_bound) {
+        rand_walk_rect->rect.x = window_bounds.window_right_bound - rand_walk_rect->rect.w - 1;
+        rand_walk_rect->velocity.x = -rand_walk_rect->velocity.x;
+        rand_walk_rect->rgb = rand_rgb();
+        rand_walk_rect->step_tracker = 0;
+    }
+    if (rand_walk_rect->rect.y <= window_bounds.window_top_bound) {
+        rand_walk_rect->rect.y = window_bounds.window_top_bound + 1;
+        rand_walk_rect->velocity.y = -rand_walk_rect->velocity.y;
+        rand_walk_rect->rgb = rand_rgb();
+        rand_walk_rect->step_tracker = 0;
+    }
+    if (rand_walk_rect->rect.y + rand_walk_rect->rect.h >= window_bounds.window_bottom_bound) {
+        rand_walk_rect->rect.y = window_bounds.window_bottom_bound - rand_walk_rect->rect.h - 1;
         rand_walk_rect->velocity.y = -rand_walk_rect->velocity.y;
         rand_walk_rect->rgb = rand_rgb();
         rand_walk_rect->step_tracker = 0;
@@ -151,50 +164,101 @@ void update_rand_walk_rect(BouncingRect *rand_walk_rect, WindowBounds window_bou
     rand_walk_rect->rect.y += rand_walk_rect->velocity.y;
 }
 
-int main(int argc, char *argv[]) {
+void clear_screen(SDL_Renderer *prenderer) {
+    SDL_SetRenderDrawColor(prenderer, 0, 0, 0, 255);
+    SDL_RenderClear(prenderer);
+}
 
-    int width = 800;
-    int height = 600;
+Vec2 increase_magnitude(Vec2 v) {
+    if (v.x > 0)  ++v.x;
+    else if (v.x < 0)  --v.x;
+    if (v.y > 0)  ++v.y;
+    else if (v.y < 0)  --v.y;
+    return v;
+}
+
+Vec2 decrease_magnitude(Vec2 v) {
+    if (v.x > 1)  --v.x;
+    else if (v.x < -1)  ++v.x;
+    if (v.y > 1)  --v.y;
+    else if (v.y < -1)  ++v.y;
+    return v;
+}
+
+void handle_keypresses(SDL_Keycode keycode, SDL_Renderer *prenderer, bool *clear_frame, int rand_walk_rect_count, BouncingRect *rand_walk_rects) {
+    switch (keycode) {
+        case SDLK_0: {
+            clear_screen(prenderer);
+            break;
+        }
+        case SDLK_c: {
+            *clear_frame = !*clear_frame;
+            break;
+        }
+        case SDLK_p: {
+            for (int i = 0; i < rand_walk_rect_count; i++) {
+                rand_walk_rects[i].rect.w++;
+                rand_walk_rects[i].rect.h++;
+            }
+            break;
+        }
+        case SDLK_v: {
+            for (int i = 0; i < rand_walk_rect_count; i++) {
+                rand_walk_rects[i].velocity = increase_magnitude(rand_walk_rects[i].velocity);
+            }
+            break;
+        }
+    }
+}
+
+void handle_shift_keypresses(SDL_Keycode keycode, int rand_walk_rect_count, BouncingRect *rand_walk_rects) {
+    switch(keycode) {
+        case SDLK_p: {
+            for (int i = 0; i < rand_walk_rect_count; i++) {
+                if (rand_walk_rects[i].rect.w > 0) {
+                    rand_walk_rects[i].rect.w--;
+                }
+                if (rand_walk_rects[i].rect.h > 0) {
+                    rand_walk_rects[i].rect.h--;
+                }
+            }
+            break;
+        }
+        case SDLK_v: {
+            for (int i = 0; i < rand_walk_rect_count; i++) {
+                rand_walk_rects[i].velocity = decrease_magnitude(rand_walk_rects[i].velocity);
+            }
+            break;
+        }
+    }
+}
+
+int main(int argc, char *argv[]) {
+    bool clear_frame = false;
+
+    int screen_width = 800;
+    int screen_height = 600;
 
     SDL_DisplayMode dm;
     if (SDL_GetCurrentDisplayMode(0, &dm) == 0) {
-        int screen_width = dm.w;
-        int screen_height = dm.h;
+        screen_width = dm.w;
+        screen_height = dm.h;
     }
 
     srand(time(NULL));
     SDL_Init(SDL_INIT_VIDEO);
     bool quit = false;
     SDL_Event event;
-    SDL_Window *pwindow = SDL_CreateWindow("RandWalk", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, SDL_WINDOW_SHOWN | SDL_WINDOW_FULLSCREEN_DESKTOP);
+    SDL_Window *pwindow = SDL_CreateWindow("RandWalk", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, screen_width, screen_height, SDL_WINDOW_SHOWN | SDL_WINDOW_FULLSCREEN_DESKTOP);
     SDL_Renderer *prenderer = SDL_CreateRenderer(pwindow, -1, SDL_RENDERER_SOFTWARE);
 
-    const int rand_walk_rect_count = 50;
-    const int pixel_size = 1;
-    const int rect_velocity = 1;
+    int rand_walk_rect_count = 50;
+    int pixel_size = 1;
+    int rect_velocity = 1;
+    int clear_frame_counter = 0;
 
     WindowBounds window_bounds = { .window_left_bound = 0, .window_top_bound = 0};
     SDL_GetWindowSize(pwindow, &window_bounds.window_right_bound, &window_bounds.window_bottom_bound);
-
-    BouncingRect bouncing_rect = {
-        .rect = {.x = 0, .y = 0, .w = pixel_size, .h = pixel_size},
-        .velocity = { .x = rect_velocity, .y = rect_velocity },
-        .rgb = rand_rgb(),
-    };
-
-    BouncingRect spiral_rect = {
-        .rect = { .x = window_bounds.window_right_bound/2, .y = window_bounds.window_bottom_bound/2, .w = pixel_size, .h = pixel_size },
-        .velocity = { .x = rect_velocity, .y = rect_velocity },
-        .rgb = rand_rgb(),
-        .degree = 0,
-        .degree_direction = 5
-    };
-
-    BouncingRect rand_walk_rect = {
-        .rect = { .x = window_bounds.window_right_bound/2, .y = window_bounds.window_bottom_bound/2, .w = pixel_size, .h = pixel_size },
-        .velocity = { .x = 0, .y = rect_velocity },
-        .rgb = rand_rgb(),
-    };
 
     BouncingRect rand_walk_rects[rand_walk_rect_count];
     for (int i = 0; i < rand_walk_rect_count; i++) {
@@ -211,26 +275,21 @@ int main(int argc, char *argv[]) {
             if (event.type == SDL_QUIT) {
                 quit = true;
             }
-            if (event.type == SDL_KEYDOWN) {
-                switch (event.key.keysym.sym) {
-                    case SDLK_0: {
-                        SDL_SetRenderDrawColor(prenderer, 0, 0, 0, 255);
-                        SDL_RenderClear(prenderer);
-                        break;
-                    }
-                }
+            if (event.key.keysym.mod & KMOD_SHIFT) {
+                handle_shift_keypresses(event.key.keysym.sym, rand_walk_rect_count, rand_walk_rects);
+            } else if (event.type == SDL_KEYDOWN) {
+                handle_keypresses(event.key.keysym.sym, prenderer, &clear_frame, rand_walk_rect_count, rand_walk_rects);
             }
         }
-
+        if (clear_frame) {
+            if (clear_frame_counter >= 25) {
+                clear_screen(prenderer);
+                clear_frame_counter = 0;
+            } else {
+                clear_frame_counter++;
+            }
+        }
         SDL_GetWindowSize(pwindow, &window_bounds.window_right_bound, &window_bounds.window_bottom_bound);
-
-        update_bouncing_rect(&bouncing_rect, window_bounds);
-        update_spiral_rect(&spiral_rect, window_bounds);
-        update_rand_walk_rect(&rand_walk_rect, window_bounds, rand_num(50, 100, 50));
-
-        render_bouncing_rect(prenderer, bouncing_rect);
-        render_bouncing_rect(prenderer, spiral_rect);
-        render_bouncing_rect(prenderer, rand_walk_rect);
 
         for (int i = 0; i < rand_walk_rect_count; i++) {
             update_rand_walk_rect(&rand_walk_rects[i], window_bounds, rand_num(5, 100, 0));
