@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #define PI 3.14159265358979323846
+#define MAX_RECTS 100
 
 typedef struct {
     int r;
@@ -79,7 +80,7 @@ void update_bouncing_rect(BouncingRect *bouncing_rect, const WindowBounds window
     bouncing_rect->rect.y += bouncing_rect->velocity.y;
 }
 
-void render_bouncing_rect(SDL_Renderer *prenderer, BouncingRect bouncing_rect) {
+void render_rand_walk_rect(SDL_Renderer *prenderer, BouncingRect bouncing_rect) {
     SDL_SetRenderDrawColor(prenderer, bouncing_rect.rgb.r, bouncing_rect.rgb.g, bouncing_rect.rgb.b, bouncing_rect.rgb.a);
     SDL_RenderFillRect(prenderer, &bouncing_rect.rect);
 }
@@ -185,7 +186,7 @@ Vec2 decrease_magnitude(Vec2 v) {
     return v;
 }
 
-void handle_keypresses(SDL_Keycode keycode, SDL_Renderer *prenderer, bool *clear_frame, int rand_walk_rect_count, BouncingRect *rand_walk_rects) {
+void handle_keypresses(SDL_Keycode keycode, SDL_Renderer *prenderer, bool *clear_frame, int *rand_walk_rect_count, BouncingRect *rand_walk_rects, WindowBounds window_bounds, int rect_velocity, int pixel_size) {
     switch (keycode) {
         case SDLK_0: {
             clear_screen(prenderer);
@@ -196,25 +197,48 @@ void handle_keypresses(SDL_Keycode keycode, SDL_Renderer *prenderer, bool *clear
             break;
         }
         case SDLK_p: {
-            for (int i = 0; i < rand_walk_rect_count; i++) {
+            for (int i = 0; i < *rand_walk_rect_count; i++) {
                 rand_walk_rects[i].rect.w++;
                 rand_walk_rects[i].rect.h++;
             }
             break;
         }
         case SDLK_v: {
-            for (int i = 0; i < rand_walk_rect_count; i++) {
+            for (int i = 0; i < *rand_walk_rect_count; i++) {
                 rand_walk_rects[i].velocity = increase_magnitude(rand_walk_rects[i].velocity);
+            }
+            break;
+        }
+        case SDLK_i: {
+            if (*rand_walk_rect_count > 0) {
+                *rand_walk_rect_count -= 1;
+            }
+            break;
+        }
+        case SDLK_d: {
+            rand_walk_rects[*rand_walk_rect_count] = (BouncingRect) {
+                .rect = { .x = rand_num(0, window_bounds.window_right_bound, 0), /* window_bounds.window_right_bound/2 */
+                          .y = rand_num(0, window_bounds.window_bottom_bound, 0), /* window_bounds.window_bottom_bound/2 */
+                          .w = pixel_size,
+                          .h = pixel_size },
+                .velocity = { .x = rect_velocity,
+                              .y = 0 },
+                .rgb = rand_rgb(),
+                .degree = 0,
+                .degree_direction = 5
+            };
+            if (*rand_walk_rect_count > 0) {
+                    *rand_walk_rect_count -= 1;
             }
             break;
         }
     }
 }
 
-void handle_shift_keypresses(SDL_Keycode keycode, int rand_walk_rect_count, BouncingRect *rand_walk_rects) {
+void handle_shift_keypresses(SDL_Keycode keycode, int *rand_walk_rect_count, BouncingRect *rand_walk_rects) {
     switch(keycode) {
         case SDLK_p: {
-            for (int i = 0; i < rand_walk_rect_count; i++) {
+            for (int i = 0; i < *rand_walk_rect_count; i++) {
                 if (rand_walk_rects[i].rect.w > 0) {
                     rand_walk_rects[i].rect.w--;
                 }
@@ -225,8 +249,20 @@ void handle_shift_keypresses(SDL_Keycode keycode, int rand_walk_rect_count, Boun
             break;
         }
         case SDLK_v: {
-            for (int i = 0; i < rand_walk_rect_count; i++) {
+            for (int i = 0; i < *rand_walk_rect_count; i++) {
                 rand_walk_rects[i].velocity = decrease_magnitude(rand_walk_rects[i].velocity);
+            }
+            break;
+        }
+        case SDLK_i: {
+            if (*rand_walk_rect_count < MAX_RECTS) {
+                    *rand_walk_rect_count += 1;
+            }
+            break;
+        }
+        case SDLK_d: {
+            if (*rand_walk_rect_count < MAX_RECTS) {
+                    *rand_walk_rect_count += 1;
             }
             break;
         }
@@ -252,7 +288,7 @@ int main(int argc, char *argv[]) {
     SDL_Window *pwindow = SDL_CreateWindow("RandWalk", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, screen_width, screen_height, SDL_WINDOW_SHOWN | SDL_WINDOW_FULLSCREEN_DESKTOP);
     SDL_Renderer *prenderer = SDL_CreateRenderer(pwindow, -1, SDL_RENDERER_SOFTWARE);
 
-    int rand_walk_rect_count = 50;
+    int rand_walk_rect_count = MAX_RECTS;
     int pixel_size = 1;
     int rect_velocity = 1;
     int clear_frame_counter = 0;
@@ -266,6 +302,8 @@ int main(int argc, char *argv[]) {
             .rect = { .x = window_bounds.window_right_bound/2, .y = window_bounds.window_bottom_bound/2, .w = pixel_size, .h = pixel_size },
             .velocity = { .x = rect_velocity, .y = 0 },
             .rgb = rand_rgb(),
+            .degree = 0,
+            .degree_direction = 5
         };
     }
 
@@ -276,9 +314,9 @@ int main(int argc, char *argv[]) {
                 quit = true;
             }
             if (event.key.keysym.mod & KMOD_SHIFT) {
-                handle_shift_keypresses(event.key.keysym.sym, rand_walk_rect_count, rand_walk_rects);
+                handle_shift_keypresses(event.key.keysym.sym, &rand_walk_rect_count, rand_walk_rects);
             } else if (event.type == SDL_KEYDOWN) {
-                handle_keypresses(event.key.keysym.sym, prenderer, &clear_frame, rand_walk_rect_count, rand_walk_rects);
+                handle_keypresses(event.key.keysym.sym, prenderer, &clear_frame, &rand_walk_rect_count, rand_walk_rects, window_bounds, rect_velocity, pixel_size);
             }
         }
         if (clear_frame) {
@@ -292,8 +330,10 @@ int main(int argc, char *argv[]) {
         SDL_GetWindowSize(pwindow, &window_bounds.window_right_bound, &window_bounds.window_bottom_bound);
 
         for (int i = 0; i < rand_walk_rect_count; i++) {
-            update_rand_walk_rect(&rand_walk_rects[i], window_bounds, rand_num(5, 100, 0));
-            render_bouncing_rect(prenderer, rand_walk_rects[i]);
+            // int num_steps = rand_num(5, 100, 0);
+            int num_steps = 5;
+            update_rand_walk_rect(&rand_walk_rects[i], window_bounds, num_steps);
+            render_rand_walk_rect(prenderer, rand_walk_rects[i]);
         }
 
         SDL_RenderPresent(prenderer);
