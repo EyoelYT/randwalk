@@ -12,6 +12,7 @@
 
 #define PI 3.14159265358979323846
 #define MAX_RECTS 100
+#define ROTATION_VELOCITY 1
 
 typedef struct {
     int r;
@@ -28,6 +29,7 @@ typedef struct {
 typedef struct {
     SDL_Rect rect;
     Vec2 velocity;
+    Vec2 center;
     RGB rgb;
     double degree;
     double degree_direction;
@@ -40,6 +42,12 @@ typedef struct {
     int window_left_bound;
     int window_top_bound;
 } WindowBounds;
+
+typedef struct {
+    void (*update_fn_ptrs[3])(BouncingRect *bouncing_rect, const WindowBounds window_bounds);
+    int update_fn_idx;
+    int num_update_fns;
+} Updaters;
 
 RGB rand_rgb() {
     RGB color;
@@ -85,10 +93,11 @@ void render_rand_walk_rect(SDL_Renderer *prenderer, BouncingRect bouncing_rect) 
     SDL_RenderFillRect(prenderer, &bouncing_rect.rect);
 }
 
-void update_spiral_rect(BouncingRect *spiral_rect, WindowBounds window_bounds) {
-    Vec2 spiral_point = get_spiral_point(spiral_rect->degree);
-    spiral_rect->rect.x = spiral_point.x + (window_bounds.window_right_bound / 2);
-    spiral_rect->rect.y = spiral_point.y + (window_bounds.window_bottom_bound / 2);
+void update_spiral_rect(BouncingRect *spiral_rect, const WindowBounds window_bounds) {
+    Vec2 next_spiral_point = get_spiral_point(spiral_rect->degree);
+
+    spiral_rect->rect.x = spiral_rect->center.x + next_spiral_point.x;
+    spiral_rect->rect.y = spiral_rect->center.y + next_spiral_point.y;
 
     if (spiral_rect->rect.x <= 0 ||
         spiral_rect->rect.y <= 0 ||
@@ -127,7 +136,7 @@ int rand_num(int min, int max, int constant) {
     return (rand() % (max - min + 1)) + min;
 }
 
-void update_rand_walk_rect(BouncingRect *rand_walk_rect, WindowBounds window_bounds, int num_steps) {
+void update_rand_walk_rect(BouncingRect *rand_walk_rect, const WindowBounds window_bounds) {
     // update direction when collision
     if (rand_walk_rect->rect.x <= window_bounds.window_left_bound) {
         rand_walk_rect->rect.x = window_bounds.window_left_bound + 1;
@@ -154,6 +163,9 @@ void update_rand_walk_rect(BouncingRect *rand_walk_rect, WindowBounds window_bou
         rand_walk_rect->step_tracker = 0;
     }
     // update step tracker
+
+    // int num_steps = rand_num(5, 100, 0);
+    int num_steps = 5;
     if (rand_walk_rect->step_tracker >= num_steps) {
         rand_walk_rect->step_tracker = 0;
         rand_walk_rect->velocity = rand_direction_two_choices(rand_walk_rect->velocity);
@@ -186,7 +198,12 @@ Vec2 decrease_magnitude(Vec2 v) {
     return v;
 }
 
-void handle_keypresses(SDL_Keycode keycode, SDL_Renderer *prenderer, bool *clear_frame, int *rand_walk_rect_count, BouncingRect *rand_walk_rects, WindowBounds window_bounds, int rect_velocity, int pixel_size) {
+int find_next_number(int prev, int min_include, int max_exclude) {
+    if (prev < max_exclude) return ++prev;
+    return min_include;
+}
+
+void handle_keypresses(SDL_Keycode keycode, SDL_Renderer *prenderer, bool *clear_frame, int *rand_walk_rect_count, Updaters *updaters, BouncingRect *rand_walk_rects, WindowBounds window_bounds, int rect_velocity, int pixel_size) {
     switch (keycode) {
         case SDLK_0: {
             clear_screen(prenderer);
@@ -217,18 +234,33 @@ void handle_keypresses(SDL_Keycode keycode, SDL_Renderer *prenderer, bool *clear
         }
         case SDLK_d: {
             rand_walk_rects[*rand_walk_rect_count] = (BouncingRect) {
-                .rect = { .x = rand_num(0, window_bounds.window_right_bound, 0), /* window_bounds.window_right_bound/2 */
-                          .y = rand_num(0, window_bounds.window_bottom_bound, 0), /* window_bounds.window_bottom_bound/2 */
+                .rect = { .x = rand_num(1, window_bounds.window_right_bound, 0),
+                          .y = rand_num(1, window_bounds.window_bottom_bound, 0),
                           .w = pixel_size,
                           .h = pixel_size },
+                .center = {
+                    .x = rand_num(1, window_bounds.window_right_bound, 0),
+                    .y = rand_num(1, window_bounds.window_bottom_bound, 0),
+                },
                 .velocity = { .x = rect_velocity,
                               .y = 0 },
                 .rgb = rand_rgb(),
                 .degree = 0,
-                .degree_direction = 5
+                .degree_direction = ROTATION_VELOCITY
             };
             if (*rand_walk_rect_count > 0) {
                     *rand_walk_rect_count -= 1;
+            }
+            break;
+        }
+        case SDLK_u: {
+            updaters->update_fn_idx = rand_num(0, updaters->num_update_fns - 1, 0);
+            // updaters->update_fn_idx = find_next_number(updaters->update_fn_idx, 0, updaters->num_update_fns - 1);
+            for (int i = 0; i < *rand_walk_rect_count; i++) {
+                rand_walk_rects[i].center.x = rand_walk_rects[i].rect.x;
+                rand_walk_rects[i].center.y = rand_walk_rects[i].rect.y;
+                rand_walk_rects[i].degree = 0;
+                rand_walk_rects[i].degree_direction = ROTATION_VELOCITY;
             }
             break;
         }
@@ -303,9 +335,19 @@ int main(int argc, char *argv[]) {
             .velocity = { .x = rect_velocity, .y = 0 },
             .rgb = rand_rgb(),
             .degree = 0,
-            .degree_direction = 5
+            .degree_direction = ROTATION_VELOCITY
         };
     }
+
+    Updaters updaters = {
+        .update_fn_ptrs = {
+            update_rand_walk_rect,
+            update_spiral_rect,
+            update_bouncing_rect,
+        },
+        .update_fn_idx = 0,
+        .num_update_fns = sizeof(((Updaters *)0)->update_fn_ptrs) / sizeof(((Updaters *)0)->update_fn_ptrs[0])
+    };
 
     while (!quit) {
 
@@ -316,7 +358,7 @@ int main(int argc, char *argv[]) {
             if (event.key.keysym.mod & KMOD_SHIFT) {
                 handle_shift_keypresses(event.key.keysym.sym, &rand_walk_rect_count, rand_walk_rects);
             } else if (event.type == SDL_KEYDOWN) {
-                handle_keypresses(event.key.keysym.sym, prenderer, &clear_frame, &rand_walk_rect_count, rand_walk_rects, window_bounds, rect_velocity, pixel_size);
+                handle_keypresses(event.key.keysym.sym, prenderer, &clear_frame, &rand_walk_rect_count, &updaters, rand_walk_rects, window_bounds, rect_velocity, pixel_size);
             }
         }
         if (clear_frame) {
@@ -330,9 +372,8 @@ int main(int argc, char *argv[]) {
         SDL_GetWindowSize(pwindow, &window_bounds.window_right_bound, &window_bounds.window_bottom_bound);
 
         for (int i = 0; i < rand_walk_rect_count; i++) {
-            // int num_steps = rand_num(5, 100, 0);
-            int num_steps = 5;
-            update_rand_walk_rect(&rand_walk_rects[i], window_bounds, num_steps);
+            // update_rand_walk_rect(&rand_walk_rects[i], window_bounds);
+            updaters.update_fn_ptrs[updaters.update_fn_idx](&rand_walk_rects[i], window_bounds);
             render_rand_walk_rect(prenderer, rand_walk_rects[i]);
         }
 
