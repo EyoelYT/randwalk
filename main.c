@@ -264,6 +264,15 @@ void handle_keypresses(SDL_Keycode keycode, SDL_Renderer *prenderer, bool *clear
             }
             break;
         }
+        case SDLK_SPACE: {
+            if (*rand_walk_rect_count > 0) {
+                    *rand_walk_rect_count = 0;
+            }
+            else {
+                *rand_walk_rect_count = MAX_RECTS;
+            }
+            break;
+        }
     }
 }
 
